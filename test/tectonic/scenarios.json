@@ -1,0 +1,10 @@
+{
+  "debian_custom_dir": {
+    "image": "mcr.microsoft.com/devcontainers/base:trixie",
+    "features": {
+      "tectonic": {
+        "installDirectory": "/opt/tectonic/bin"
+      }
+    }
+  }
+}
