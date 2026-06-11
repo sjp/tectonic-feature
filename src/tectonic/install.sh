@@ -7,8 +7,13 @@ INSTALL_DIRECTORY="${INSTALLDIRECTORY:-/usr/local/bin}"
 echo "Activating feature 'tectonic'"
 echo "Installing into: ${INSTALL_DIRECTORY}"
 
-# Ensure the tools we need are available. The drop-sh installer needs curl;
-# the arm64 fallback also needs tar.
+# We download Tectonic's official *static musl* release tarballs directly. These
+# are self-contained (no runtime shared-library dependencies like libgraphite2 /
+# libharfbuzz / libicu), so they run on slim base images where the dynamically
+# linked '-gnu' build — which the upstream drop-sh installer selects on glibc —
+# would fail to load.
+
+# Ensure the tools we need are available: curl to download, tar to extract.
 ensure_prereqs() {
     missing=""
     command -v curl >/dev/null 2>&1 || missing="${missing} curl"
@@ -27,59 +32,53 @@ ensure_prereqs() {
     fi
 }
 
-# Place the produced 'tectonic' binary onto PATH.
-install_binary() {
-    src="$1"
-    if [ ! -f "${src}" ]; then
-        echo "ERROR: expected tectonic binary at '${src}' was not produced." >&2
-        exit 1
-    fi
-    mkdir -p "${INSTALL_DIRECTORY}"
-    install -m 0755 "${src}" "${INSTALL_DIRECTORY}/tectonic"
-}
-
 ensure_prereqs
 
-# Work in a throwaway directory; the drop-sh installer drops the binary into the
-# current directory, and we extract release tarballs here too.
+# Map the machine architecture to Tectonic's musl release target triple.
+ARCH="$(uname -m)"
+case "${ARCH}" in
+    x86_64 | amd64)
+        TARGET="x86_64-unknown-linux-musl" ;;
+    aarch64 | arm64)
+        TARGET="aarch64-unknown-linux-musl" ;;
+    *)
+        echo "ERROR: unsupported architecture '${ARCH}'." >&2
+        exit 1 ;;
+esac
+
+# Resolve the latest tectonic release version. The /releases/latest endpoint
+# points at the main 'tectonic@X.Y.Z' tag.
+echo "Resolving latest tectonic release..."
+TAG="$(curl --proto '=https' --tlsv1.2 -fsSL \
+    https://api.github.com/repos/tectonic-typesetting/tectonic/releases/latest \
+    | grep -o '"tag_name": *"tectonic@[^"]*"' | head -n1 \
+    | sed -e 's/.*tectonic@//' -e 's/"//')"
+
+if [ -z "${TAG}" ]; then
+    echo "ERROR: could not determine the latest tectonic version." >&2
+    exit 1
+fi
+
+# Work in a throwaway directory.
 WORKDIR="$(mktemp -d)"
 cleanup() { rm -rf "${WORKDIR}"; }
 trap cleanup EXIT
 cd "${WORKDIR}"
 
-ARCH="$(uname -m)"
-OS="$(uname -s)"
+TARBALL="tectonic-${TAG}-${TARGET}.tar.gz"
+URL="https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%40${TAG}/${TARBALL}"
 
-# Tectonic does NOT publish an aarch64 glibc (linux-gnu) build, so the official
-# drop-sh installer 404s on arm64 Linux. For that case, fetch the static musl
-# build directly. Everywhere else, use the upstream installer unchanged.
-if [ "${OS}" = "Linux" ] && { [ "${ARCH}" = "aarch64" ] || [ "${ARCH}" = "arm64" ]; }; then
-    echo "Detected arm64 Linux; tectonic ships only a musl build for this target."
-    echo "Resolving latest tectonic release..."
+echo "Downloading ${TARBALL} (v${TAG}, ${TARGET})..."
+curl --proto '=https' --tlsv1.2 -fsSL "${URL}" -o "${TARBALL}"
+tar -xzf "${TARBALL}"
 
-    TAG="$(curl --proto '=https' --tlsv1.2 -fsSL \
-        https://api.github.com/repos/tectonic-typesetting/tectonic/releases/latest \
-        | grep -o '"tag_name": *"tectonic@[^"]*"' | head -n1 \
-        | sed -e 's/.*tectonic@//' -e 's/"//')"
-
-    if [ -z "${TAG}" ]; then
-        echo "ERROR: could not determine the latest tectonic version." >&2
-        exit 1
-    fi
-
-    TARGET="aarch64-unknown-linux-musl"
-    TARBALL="tectonic-${TAG}-${TARGET}.tar.gz"
-    URL="https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%40${TAG}/${TARBALL}"
-
-    echo "Downloading ${TARBALL} (v${TAG})..."
-    curl --proto '=https' --tlsv1.2 -fsSL "${URL}" -o "${TARBALL}"
-    tar -xzf "${TARBALL}"
-    install_binary "${WORKDIR}/tectonic"
-else
-    echo "Downloading and running the Tectonic installer..."
-    curl --proto '=https' --tlsv1.2 -fsSL https://drop-sh.fullyjustified.net | sh
-    install_binary "${WORKDIR}/tectonic"
+if [ ! -f "${WORKDIR}/tectonic" ]; then
+    echo "ERROR: release tarball did not contain a 'tectonic' binary." >&2
+    exit 1
 fi
+
+mkdir -p "${INSTALL_DIRECTORY}"
+install -m 0755 "${WORKDIR}/tectonic" "${INSTALL_DIRECTORY}/tectonic"
 
 echo "Tectonic installed at ${INSTALL_DIRECTORY}/tectonic"
 "${INSTALL_DIRECTORY}/tectonic" --version || true
