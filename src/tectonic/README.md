@@ -18,15 +18,14 @@ Installs the [Tectonic](https://tectonic-typesetting.github.io/) LaTeX toolkit �
 
 ## How it works
 
-On x86_64 this feature runs Tectonic's official installer:
+The feature downloads Tectonic's official **static musl** release tarball for the current architecture directly from GitHub:
 
-```sh
-curl --proto '=https' --tlsv1.2 -fsSL https://drop-sh.fullyjustified.net | sh
-```
+- `x86_64` → `tectonic-<version>-x86_64-unknown-linux-musl.tar.gz`
+- `aarch64` / `arm64` → `tectonic-<version>-aarch64-unknown-linux-musl.tar.gz`
 
-The installer downloads a prebuilt `tectonic` binary, which is then placed into the configured install directory.
+It resolves the latest release version via the GitHub API, extracts the `tectonic` binary, and installs it into the configured directory.
 
-On **arm64 Linux**, Tectonic does not publish a glibc (`aarch64-unknown-linux-gnu`) build, so the drop-sh installer 404s. The feature detects this case and instead downloads the official static `aarch64-unknown-linux-musl` release tarball directly from GitHub.
+The musl builds are statically linked, so they have **no runtime shared-library dependencies** (e.g. `libgraphite2`, `libharfbuzz`, `libicu`) and run on slim base images. This is why the feature does not use the upstream `drop-sh` installer, which selects the dynamically linked `-gnu` build on glibc systems and fails to load on minimal images (and has no `aarch64-unknown-linux-gnu` build at all).
 
 ## OS Support
 
