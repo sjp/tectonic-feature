@@ -2,7 +2,7 @@
   "id": "tectonic",
   "version": "1.0.0",
   "name": "Tectonic",
-  "documentationURL": "https://github.com/sjp/tectonic-feature/tree/main/src/tectonic",
+  "documentationURL": "https://github.com/sjp/tectonic-feature/tree/master/src/tectonic",
   "description": "Installs the Tectonic LaTeX toolkit (a modern, self-contained TeX/LaTeX engine).",
   "options": {
     "installDirectory": {
